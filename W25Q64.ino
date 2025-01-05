@@ -3,9 +3,10 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include "W25Q.h"
+#include "wifi_credentials.h"
 
-const char* ssid = "YOUR_SSID";
-const char* password = "YOUR_PASSWORD";
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
 W25Q flashChip(5);
 AsyncWebServer server(80);
@@ -405,7 +406,7 @@ bool writeToFlash(uint32_t address, const String& content)
         size_t chunkSize = min(contentLength - i, (size_t)256);
         flashChip.writeData(address + (uint32_t)i, (const uint8_t*)content.c_str() + (uint32_t)i, chunkSize);
     }
-    Serial.println("Flash'e yazma işlemi tamamlandı.");
+    Serial.println("Writing to flash is complete.");
     return true;
 }
 
@@ -426,6 +427,8 @@ bool deleteBlockFromFlash(uint32_t address)
 void setup() {
     Serial.begin(115200);
 
+    delay(2000);
+
     // Connect to Wi-Fi
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED) 
@@ -440,11 +443,12 @@ void setup() {
     // Initialize the flash chip
     flashChip.begin();
 
-    testAddressing(flashChip);
-    disableWriteProtection(flashChip);
-    testChipErase(flashChip);
-    testSectorErase(flashChip, 0x000000);
-    testVerify(flashChip);
+    // Test flash chip
+    flashChip.testAddressing();
+    flashChip.disableWriteProtection();
+    flashChip.testChipErase();
+    flashChip.testSectorErase();
+    flashChip.testVerify();
 
     // Serve the HTML page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -458,15 +462,16 @@ void setup() {
             uploadedContent = request->getParam("content", true)->value();
             if (!uploadedContent.isEmpty()) 
             {
-                request->send(200, "text/plain", "İçerik yüklendi.");
-            } else 
+                request->send(200, "text/plain", "Content loaded.");
+            } 
+            else 
             {
-                request->send(500, "text/plain", "İçerik yüklenemedi.");
+                request->send(500, "text/plain", "Content could not be loaded.");
             }
         } 
         else 
         {
-            request->send(400, "text/plain", "İçerik eksik.");
+            request->send(400, "text/plain", "Content is missing.");
         }
     });
 
@@ -475,21 +480,23 @@ void setup() {
         String sector = request->getParam("sector")->value();
         String block = request->getParam("block")->value();
         uint32_t address = (block.toInt() * 16 * 4096) + (sector.toInt() * 4096);
+        Serial.print("Address: ");
+        Serial.println(address);
         if (request->hasParam("content", true)) 
         {
           uploadedContent = request->getParam("content", true)->value();
           if (writeToFlash(address, uploadedContent)) 
           {
-            request->send(200, "text/plain", "Flash'e yazıldı.");
+            request->send(200, "text/plain", "Written in Flash.");
           } 
           else 
           {
-            request->send(500, "text/plain", "Flash'e yazılamadı.");
+            request->send(500, "text/plain", "Could not write to Flash.");
           }
         } 
         else 
         {
-            request->send(400, "text/plain", "İçerik eksik.");
+            request->send(400, "text/plain", "Content is missing.");
         }
     });
 
@@ -498,6 +505,8 @@ void setup() {
         String sector = request->getParam("sector")->value();
         String block = request->getParam("block")->value();
         uint32_t flashAddress = (block.toInt() * 16 * 4096) + (sector.toInt() * 4096);
+        Serial.print("Address: ");
+        Serial.println(flashAddress);
         uint8_t buffer[256];
         String content = "";
         for (uint32_t address = flashAddress; address < 4096; address += 256) {
@@ -508,7 +517,7 @@ void setup() {
               content += (char)buffer[i];
           }
         }
-        Serial.println("Flash'ten okuma işlemi tamamlandı.");
+        Serial.println("Flash content read successfully.");
         request->send(200, "text/plain", content);
     });
 
@@ -517,14 +526,16 @@ void setup() {
         String sector = request->getParam("sector")->value();
         String block = request->getParam("block")->value();
         uint32_t address = (block.toInt() * 16 * 4096) + (sector.toInt() * 4096);
+        Serial.print("Address: ");
+        Serial.println(address);
 
         if (deleteSectorFromFlash(address)) 
         {
-            request->send(200, "text/plain", "Flash tamamen silindi.");
+            request->send(200, "text/plain", "The sector was completely deleted.");
         } 
         else 
         {
-            request->send(500, "text/plain", "Silme işlemi başarısız.");
+            request->send(500, "text/plain", "Deletion failed.");
         }
     });
 
@@ -534,9 +545,9 @@ void setup() {
         uint32_t address = (block.toInt() * 16 * 4096);
 
         if (deleteBlockFromFlash(address)) {
-            request->send(200, "text/plain", "Flash tamamen silindi.");
+            request->send(200, "text/plain", "The block was completely deleted.");
         } else {
-            request->send(500, "text/plain", "Silme işlemi başarısız.");
+            request->send(500, "text/plain", "Deletion failed.");
         }
     });
 
@@ -544,21 +555,23 @@ void setup() {
     server.on("/verify", HTTP_GET, [](AsyncWebServerRequest *request){
         if (uploadedContent.isEmpty()) 
         {
-            request->send(400, "text/plain", "Yüklenen içerik mevcut değil.");
+            request->send(400, "text/plain", "Uploaded content is not available.");
             return;
         }
 
         String sector = request->getParam("sector")->value();
         String block = request->getParam("block")->value();
         uint32_t address = (block.toInt() * 16 * 4096) + (sector.toInt() * 4096);
+        Serial.print("Address: ");
+        Serial.println(address);
         bool result = flashChip.verifyData(address, (const uint8_t*)uploadedContent.c_str(), sizeof((const uint8_t*)uploadedContent.c_str()));
         if (result) 
         {
-            request->send(200, "text/plain", "Verify başarılı: Veriler eşleşiyor!");
+            request->send(200, "text/plain", "Verify successful: Data matches!");
         } 
         else 
         {
-            request->send(200, "text/plain", "Verify başarısız: Veriler eşleşmiyor!");
+            request->send(200, "text/plain", "Verify failed: Data does not match!");
         }
 
     });
@@ -568,17 +581,20 @@ void setup() {
         String sector = request->getParam("sector")->value();
         String block = request->getParam("block")->value();
         uint32_t address = (block.toInt() * 16 * 4096) + (sector.toInt() * 4096);
+        Serial.print("Address: ");
+        Serial.println(address);
         bool isEmpty = flashChip.isBlank(address);
         if (isEmpty) {
-            request->send(200, "text/plain", "Flash boş.");
+            request->send(200, "text/plain", "Sector is empty.");
         } else {
-            request->send(200, "text/plain", "Flash dolu.");
+            request->send(200, "text/plain", "Sector full.");
         }
     });
 
     // Handle JEDEC ID request
     server.on("/jedec", HTTP_GET, [](AsyncWebServerRequest *request){
         uint32_t jedecId = flashChip.getJEDECID();
+
         char buffer[50];
         sprintf(buffer, "JEDEC ID: %06X", jedecId);
         request->send(200, "text/plain", buffer);
@@ -589,101 +605,4 @@ void setup() {
 
 void loop() {
     
-}
-
-void testAddressing(W25Q &flash) {
-    uint8_t testData[256];
-    uint8_t readBuffer[256];
-    for (int i = 0; i < 256; i++) {
-        testData[i] = i; 
-    }
-
-    uint32_t addresses[] = {0x000000, 0x010000, 0x020000, 0x030000}; 
-    for (uint8_t i = 0; i < sizeof(addresses) / sizeof(addresses[0]); i++) {
-        uint32_t address = addresses[i];
-
-        Serial.print("Adres: ");
-        Serial.println(address, HEX);
-
-        flash.eraseSector(address); 
-        flash.writeData(address, testData, sizeof(testData)); 
-        flash.readData(address, readBuffer, sizeof(readBuffer)); 
-
-        // Doğrula
-        bool isValid = true;
-        for (int j = 0; j < 256; j++) {
-            if (testData[j] != readBuffer[j]) {
-                isValid = false;
-                break;
-            }
-        }
-
-        if (isValid) {
-            Serial.println("Veri doğrulandı!");
-        } else {
-            Serial.println("Doğrulama hatası!");
-        }
-    }
-}
-
-void disableWriteProtection(W25Q &flash) {
-    uint8_t status;
-    flash.readCommand(0x05, &status, 1);
-
-    Serial.print("Koruma durumu (Status Register): ");
-    Serial.println(status, BIN);
-
-    uint8_t disableProtection[2] = {0x00, 0x00}; // BP, TB ve SEC bits
-    flash.writeEnable(); //  (CMD_WRITE_ENABLE)
-    flash.sendCommand(0x01, disableProtection, 2); // Write Status Register
-    flash.waitForReady(); 
-    if (status & 0x3C) { // if BP bits are set
-        Serial.println("Koruma aktif, devre dışı bırakılıyor...");
-        uint8_t disableProtection[2] = {0x01, 0x00}; // reset the Status register
-        flash.sendCommand(0x01, disableProtection, 2); // Write Status Register command
-        flash.waitForReady();
-        Serial.println("Koruma devre dışı bırakıldı.");
-    } else {
-        Serial.println("Koruma zaten devre dışı.");
-    }
-}
-
-void testChipErase(W25Q &flash) {
-    flash.chipErase();
-    Serial.println("Çip tamamen silindi. Kontrol ediliyor...");
-    bool isBlank = flash.isBlank(0x000000); 
-    if (isBlank) {
-        Serial.println("Çip tamamen boş.");
-    } else {
-        Serial.println("Çip silinemedi!");
-    }
-}
-
-void testSectorErase(W25Q &flash, uint32_t address) {
-    flash.eraseSector(address);
-    Serial.print("Sektör silindi. Kontrol ediliyor: ");
-    Serial.println(address, HEX);
-    bool isBlank = flash.isBlank(address);
-    if (isBlank) {
-        Serial.println("Sektör tamamen boş.");
-    } else {
-        Serial.println("Sektör silinemedi!");
-    }
-}
-
-void testVerify(W25Q &flash) {
-    uint8_t testData[256];
-    for (int i = 0; i < 256; i++) {
-        testData[i] = i; 
-    }
-
-    uint32_t address = 0x000000;
-    flash.writeData(address, testData, sizeof(testData));
-
-    bool isVerified = flash.verifyData(address, testData, sizeof(testData));
-    if (isVerified) {
-        Serial.println("Doğrulama başarılı!");
-    } else {
-        Serial.println("Doğrulama başarısız!");
-    }
 }

@@ -1,6 +1,6 @@
 // W25Q.h
-#ifndef W25Q_H
-#define W25Q_H
+#ifndef _W25Q_H
+#define _W25Q_H
 
 #include <Arduino.h>
 #include <SPI.h>
@@ -18,16 +18,20 @@ public:
     void chipErase();
     bool verifyData(uint32_t address, const uint8_t* data, size_t length);
     bool isBlank(uint32_t address);
-
-    void sendCommand(uint8_t cmd, const uint8_t *data, size_t length);
-    void readCommand(uint8_t cmd, uint8_t *buffer, size_t length);
-    void writeEnable();
-    void waitForReady();
+    void testAddressing();
+    void disableWriteProtection();
+    void testChipErase();
+    void testSectorErase();
+    void testVerify();
 
 private:
     uint8_t _csPin;
-
-
+    
+    void sendCommand(uint8_t cmd, const uint8_t *data, size_t length);
+    void readCommand(uint8_t cmd, uint8_t *buffer, size_t length);
+    void writeEnable();
+    void writeDisable();
+    void waitForReady();
 };
 
-#endif // W25Q_H
+#endif /* _W25Q_H */
